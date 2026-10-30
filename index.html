@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Café Stock Tracker</title>
+<style>
+  :root {
+    --bg: #f4f3f0;
+    --card: #ffffff;
+    --ink: #24282d;
+    --muted: #7a7f87;
+    --line: #e4e2dd;
+    --accent: #ee7a2b;
+    --accent-soft: #fdeee1;
+    --ok: #5e8f74;
+    --ok-soft: #e6f0ea;
+    --radius: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1e21; --card: #26292d; --ink: #f1efea; --muted: #9aa0a8;
+      --line: #383c41; --accent-soft: #3b2a1c; --ok-soft: #223228;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 18px/1.45 -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 16px 80px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 34px; margin: 0; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 16px; margin-top: 4px; }
+  .status { font-size: 15px; color: var(--muted); }
+  .status.err { color: #c0392b; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin: 24px 0; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; }
+  .stat .label { color: var(--muted); font-size: 15px; }
+  .stat .num { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; }
+  .stat.hot .num { color: var(--accent); }
+
+  .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .tab {
+    appearance: none; background: none; border: 0; font: inherit; font-weight: 600; color: var(--muted);
+    padding: 12px 18px; cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap;
+  }
+  .tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+  .tab .pill { margin-left: 6px; background: var(--accent); color: #fff; border-radius: 99px; font-size: 13px; padding: 1px 8px; }
+
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 20px 0; }
+  .chip {
+    appearance: none; font: inherit; font-size: 15px; background: var(--card); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 99px; padding: 6px 14px; cursor: pointer;
+  }
+  .chip.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+  .card.low { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .card .top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  .name { font-weight: 650; font-size: 19px; }
+  .meta { color: var(--muted); font-size: 14px; }
+  .badge { font-size: 13px; font-weight: 700; border-radius: 99px; padding: 3px 11px; white-space: nowrap; }
+  .badge.low { background: var(--accent-soft); color: var(--accent); }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); }
+
+  .row { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; gap: 10px; }
+  .row label { color: var(--muted); font-size: 15px; }
+  .stepper { display: flex; align-items: center; gap: 6px; }
+  .stepper button {
+    width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg);
+    color: var(--ink); font-size: 22px; line-height: 1; cursor: pointer;
+  }
+  .stepper button:hover { border-color: var(--accent); color: var(--accent); }
+  .stepper input {
+    width: 64px; height: 38px; text-align: center; font: inherit; font-size: 20px; font-weight: 700;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink);
+  }
+  .save {
+    width: 100%; margin-top: 16px; padding: 11px; font: inherit; font-weight: 700; border: 0; border-radius: 12px;
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  .save:disabled { background: var(--line); color: var(--muted); cursor: default; }
+
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 14px; font-weight: 600; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  td.total { font-weight: 800; color: var(--accent); font-size: 22px; }
+  .copy {
+    margin-top: 18px; padding: 12px 22px; font: inherit; font-weight: 700; border: 0; border-radius: 12px;
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  .login { max-width: 400px; margin: 12vh auto 0; }
+  .login .panel { padding: 28px; }
+  .login h2 { margin: 0 0 4px; font-size: 26px; }
+  .field { display: block; margin-top: 16px; color: var(--muted); font-size: 15px; }
+  .field input {
+    display: block; width: 100%; margin-top: 6px; padding: 12px 14px; font: inherit; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+  }
+  .field input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .login .copy { width: 100%; margin-top: 22px; }
+  .msg { color: #c0392b; font-size: 15px; margin-top: 12px; min-height: 20px; }
+  .who { display: flex; align-items: center; gap: 12px; justify-content: flex-end; }
+  .ghost {
+    font: inherit; font-size: 15px; font-weight: 600; background: var(--card); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 10px; padding: 7px 14px; cursor: pointer;
+  }
+  .ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .userform { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: end; }
+  .userform .copy { margin-top: 0; }
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    padding: 10px 20px; border-radius: 99px; font-size: 16px; opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap login" id="login" hidden>
+  <h1>Café <span>Stock</span> Tracker</h1>
+  <form class="panel" id="loginForm" style="margin-top:20px">
+    <h2>Sign in</h2>
+    <div class="sub">Use your username and password.</div>
+    <label class="field">Username<input id="lu" autocomplete="username" autocapitalize="none" required></label>
+    <label class="field">Password<input id="lp" type="password" autocomplete="current-password" required></label>
+    <div class="msg" id="loginMsg"></div>
+    <button class="copy" type="submit">Sign in</button>
+  </form>
+</div>
+<div class="wrap" id="app" hidden>
+  <header>
+    <div>
+      <h1>Café <span>Stock</span> Tracker</h1>
+      <div class="sub" id="sub">Loading…</div>
+    </div>
+    <div>
+      <div class="who"><span id="who"></span><button class="ghost" id="signout">Sign out</button></div>
+      <div class="status" id="status" style="text-align:right;margin-top:6px"></div>
+    </div>
+  </header>
+
+  <section class="stats" id="stats"></section>
+  <nav class="tabs" id="tabs"></nav>
+  <div class="chips" id="chips"></div>
+  <main id="main"></main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const SUPABASE_URL = "https://igccdslbxtyjkemiwnwu.supabase.co";
+const SUPABASE_KEY = "sb_publishable_8TQwZbY7XXxugxKFguN3Gg_lj0Ol00a";
+const ORDER_TAB = "__order__";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const USER_DOMAIN = "@tracker.local";
+const USERS_TAB = "__users__";
+const state = { rows: [], outlets: [], tab: null, category: "All", edits: {}, saving: {}, session: null, profile: null };
+
+// every request carries the signed-in user's token
+const hdr = (extra) => ({
+  apikey: SUPABASE_KEY, "Content-Type": "application/json",
+  Authorization: "Bearer " + (state.session ? state.session.access_token : SUPABASE_KEY), ...extra,
+});
+
+function setSession(s) {
+  state.session = s;
+  try { s ? localStorage.setItem("tracker.session", JSON.stringify(s)) : localStorage.removeItem("tracker.session"); } catch (e) {}
+}
+
+async function authCall(path, body) {
+  const res = await fetch(SUPABASE_URL + "/auth/v1/" + path, {
+    method: "POST", headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const out = await res.json();
+  if (!res.ok) throw new Error(out.msg || out.error_description || out.message || "Sign in failed");
+  return out;
+}
+
+async function startSession(s) {
+  setSession({ access_token: s.access_token, refresh_token: s.refresh_token, expires_at: s.expires_at });
+  const r = await fetch(SUPABASE_URL + "/rest/v1/profiles?select=username,display_name,role&id=eq." + s.user.id, { headers: hdr() });
+  state.profile = (await r.json())[0] || { username: s.user.email, display_name: s.user.email, role: "staff" };
+  $("login").hidden = true; $("app").hidden = false;
+  $("who").textContent = state.profile.display_name + (state.profile.role === "admin" ? " (admin)" : "");
+  await load();
+}
+
+async function restoreSession() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem("tracker.session")); } catch (e) {}
+  if (s) {
+    try {
+      const out = await authCall("token?grant_type=refresh_token", { refresh_token: s.refresh_token });
+      return startSession(out);
+    } catch (e) { setSession(null); }
+  }
+  showLogin();
+}
+
+function showLogin() {
+  state.profile = null; state.rows = []; state.edits = {};
+  $("app").hidden = true; $("login").hidden = false; $("lp").value = "";
+}
+
+$("loginForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault(); $("loginMsg").textContent = "";
+  try {
+    const out = await authCall("token?grant_type=password",
+      { email: $("lu").value.trim().toLowerCase() + USER_DOMAIN, password: $("lp").value });
+    await startSession(out);
+  } catch (e) {
+    $("loginMsg").textContent = /invalid/i.test(e.message) ? "Wrong username or password." : e.message;
+  }
+});
+
+$("signout").addEventListener("click", async () => {
+  try { await fetch(SUPABASE_URL + "/auth/v1/logout", { method: "POST", headers: hdr() }); } catch (e) {}
+  setSession(null); showLogin();
+});
+
+async function load() {
+  try {
+    const url = SUPABASE_URL + "/rest/v1/stock_counts" +
+      "?select=id,qty_on_hand,reorder_level,counted_at,outlets(name),items(sku,name,unit,category)" +
+      "&order=counted_at.desc";
+    const res = await fetch(url, { headers: hdr() });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    // keep only the latest count per outlet + sku
+    const seen = new Set();
+    state.rows = [];
+    for (const r of data) {
+      const key = r.outlets.name + "|" + r.items.sku;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      state.rows.push({
+        id: r.id, outlet: r.outlets.name, sku: r.items.sku, name: r.items.name,
+        unit: r.items.unit, category: r.items.category || "Other",
+        qty: r.qty_on_hand, reorder: r.reorder_level, counted: r.counted_at,
+      });
+    }
+    state.rows.sort((a, b) => a.sku.localeCompare(b.sku));
+    state.outlets = [...new Set(state.rows.map((r) => r.outlet))].sort();
+    if (!state.tab) state.tab = state.outlets[0];
+    $("status").textContent = "● Connected to Supabase";
+    $("status").className = "status";
+  } catch (e) {
+    $("status").textContent = "Could not load data: " + e.message;
+    $("status").className = "status err";
+  }
+  render();
+}
+
+const isLow = (r) => r.qty <= r.reorder;
+const current = (r) => state.edits[r.id] || { qty: r.qty, reorder: r.reorder };
+const dirty = (r) => { const e = state.edits[r.id]; return !!e && (e.qty !== r.qty || e.reorder !== r.reorder); };
+
+function render() {
+  const low = state.rows.filter(isLow);
+  $("sub").textContent = state.rows.length
+    ? "Counts as of " + state.rows.reduce((m, r) => (r.counted > m ? r.counted : m), "")
+    : "No data";
+  $("stats").innerHTML = `
+    <div class="stat"><div class="label">Outlets</div><div class="num">${state.outlets.length}</div></div>
+    <div class="stat"><div class="label">Items tracked</div><div class="num">${state.rows.length}</div></div>
+    <div class="stat hot"><div class="label">Items low</div><div class="num">${low.length}</div></div>`;
+
+  $("tabs").innerHTML = state.outlets.map((o) => {
+    const n = state.rows.filter((r) => r.outlet === o && isLow(r)).length;
+    return `<button class="tab ${state.tab === o ? "active" : ""}" data-tab="${esc(o)}">${esc(o)}${n ? `<span class="pill">${n}</span>` : ""}</button>`;
+  }).join("") +
+    `<button class="tab ${state.tab === ORDER_TAB ? "active" : ""}" data-tab="${ORDER_TAB}">Order from suppliers</button>` +
+    (state.profile && state.profile.role === "admin"
+      ? `<button class="tab ${state.tab === USERS_TAB ? "active" : ""}" data-tab="${USERS_TAB}">Users</button>` : "");
+
+  if (state.tab === ORDER_TAB) { $("chips").innerHTML = ""; renderOrder(); }
+  else if (state.tab === USERS_TAB) { $("chips").innerHTML = ""; renderUsers(); }
+  else renderOutlet();
+}
+
+function renderOutlet() {
+  const rows = state.rows.filter((r) => r.outlet === state.tab);
+  const cats = ["All", ...new Set(rows.map((r) => r.category))];
+  if (!cats.includes(state.category)) state.category = "All";
+  $("chips").innerHTML = cats.map((c) =>
+    `<button class="chip ${c === state.category ? "active" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
+
+  const shown = rows.filter((r) => state.category === "All" || r.category === state.category);
+  // low items first
+  shown.sort((a, b) => isLow(b) - isLow(a) || a.sku.localeCompare(b.sku));
+  $("main").innerHTML = shown.length
+    ? `<div class="grid">${shown.map(card).join("")}</div>`
+    : `<div class="empty">No items.</div>`;
+}
+
+function card(r) {
+  const e = current(r);
+  const low = isLow({ qty: e.qty, reorder: e.reorder });
+  return `
+  <div class="card ${low ? "low" : ""}" data-id="${r.id}">
+    <div class="top">
+      <div><div class="name">${esc(r.name)}</div><div class="meta">${esc(r.sku)} · ${esc(r.category)} · per ${esc(r.unit)}</div></div>
+      <span class="badge ${low ? "low" : "ok"}">${low ? "Low" : "OK"}</span>
+    </div>
+    <div class="row"><label>In stock</label>${stepper(r.id, "qty", e.qty)}</div>
+    <div class="row"><label>Reorder level</label>${stepper(r.id, "reorder", e.reorder)}</div>
+    <button class="save" data-save="${r.id}" ${dirty(r) && !state.saving[r.id] ? "" : "disabled"}>
+      ${state.saving[r.id] ? "Saving…" : dirty(r) ? "Save changes" : "Saved"}
+    </button>
+  </div>`;
+}
+
+function stepper(id, field, value) {
+  return `<div class="stepper">
+    <button data-step="-1" data-id="${id}" data-field="${field}" aria-label="decrease">−</button>
+    <input type="number" min="0" value="${value}" data-id="${id}" data-field="${field}">
+    <button data-step="1" data-id="${id}" data-field="${field}" aria-label="increase">+</button>
+  </div>`;
+}
+
+function shortages() {
+  const map = new Map();
+  for (const r of state.rows) {
+    const gap = r.reorder - r.qty;
+    if (gap < 0 || r.qty > r.reorder) continue;
+    const m = map.get(r.sku) || { name: r.name, unit: r.unit, category: r.category, total: 0, by: {} };
+    // order back up to the reorder level; at-level items still flag, so order at least 1
+    const need = Math.max(gap, 1);
+    m.total += need; m.by[r.outlet] = need;
+    map.set(r.sku, m);
+  }
+  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+function renderOrder() {
+  const list = shortages();
+  if (!list.length) { $("main").innerHTML = `<div class="panel empty">Nothing to order. All items are above reorder level.</div>`; return; }
+  const head = state.outlets.map((o) => `<th class="n">${esc(o)}</th>`).join("");
+  const body = list.map(([sku, m]) => `<tr>
+      <td><strong>${esc(m.name)}</strong><div class="meta">${esc(sku)} · ${esc(m.category)}</div></td>
+      ${state.outlets.map((o) => `<td class="n">${m.by[o] ?? "–"}</td>`).join("")}
+      <td class="n total">${m.total} <span class="meta">${esc(m.unit)}</span></td></tr>`).join("");
+  $("main").innerHTML = `<div class="panel">
+    <table><thead><tr><th>Item</th>${head}<th class="n">Order total</th></tr></thead><tbody>${body}</tbody></table>
+    <button class="copy" id="copy">Copy order list</button></div>`;
+}
+
+async function renderUsers() {
+  $("main").innerHTML = `<div class="panel">
+    <h2 style="margin-top:0">Add a user</h2>
+    <form class="userform" id="userForm">
+      <label class="field" style="margin:0">Username<input id="nu" pattern="[a-z0-9_]{3,30}" autocapitalize="none" required></label>
+      <label class="field" style="margin:0">Display name<input id="nd"></label>
+      <label class="field" style="margin:0">Initial password<input id="np" type="text" minlength="6" required></label>
+      <button class="copy" type="submit">Add user</button>
+    </form>
+    <div class="msg" id="userMsg"></div>
+    <h2>Users</h2><div id="userList" class="meta">Loading…</div></div>`;
+  const r = await fetch(SUPABASE_URL + "/rest/v1/profiles?select=username,display_name,role&order=created_at", { headers: hdr() });
+  const list = await r.json();
+  $("userList").innerHTML = `<table><thead><tr><th>Username</th><th>Name</th><th>Role</th></tr></thead><tbody>` +
+    list.map((u) => `<tr><td>${esc(u.username)}</td><td>${esc(u.display_name)}</td><td>${esc(u.role)}</td></tr>`).join("") + `</tbody></table>`;
+  $("userForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const res = await fetch(SUPABASE_URL + "/rest/v1/rpc/admin_create_user", {
+      method: "POST", headers: hdr(),
+      body: JSON.stringify({ p_username: $("nu").value.trim(), p_password: $("np").value, p_display: $("nd").value.trim() }),
+    });
+    if (res.ok) { toast("User added"); renderUsers(); }
+    else { const e = await res.json(); $("userMsg").textContent = /already exists|duplicate/i.test(e.message) ? "That username is taken." : e.message; }
+  });
+}
+
+function orderText() {
+  const lines = shortages().map(([sku, m]) => {
+    const parts = state.outlets.filter((o) => m.by[o]).map((o) => `${o} ${m.by[o]}`).join(", ");
+    return `${m.total} x ${m.name} (${m.unit}) - ${sku} [${parts}]`;
+  });
+  return "Supplier order\n\n" + lines.join("\n");
+}
+
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+async function save(id) {
+  const row = state.rows.find((r) => r.id === id), e = state.edits[id];
+  if (!row || !e) return;
+  state.saving[id] = true; render();
+  try {
+    const res = await fetch(SUPABASE_URL + "/rest/v1/stock_counts?id=eq." + id, {
+      method: "PATCH",
+      headers: hdr({ Prefer: "return=representation" }),
+      body: JSON.stringify({ qty_on_hand: e.qty, reorder_level: e.reorder }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const out = await res.json();
+    if (!out.length) throw new Error("Update was not allowed");
+    row.qty = out[0].qty_on_hand; row.reorder = out[0].reorder_level;
+    delete state.edits[id];
+    toast("Saved " + row.name);
+  } catch (err) {
+    toast("Save failed: " + err.message.slice(0, 80));
+  }
+  delete state.saving[id]; render();
+}
+
+document.addEventListener("click", (ev) => {
+  const t = ev.target.closest("button"); if (!t) return;
+  if (t.dataset.tab) { state.tab = t.dataset.tab; render(); }
+  else if (t.dataset.cat) { state.category = t.dataset.cat; render(); }
+  else if (t.dataset.step) {
+    const id = +t.dataset.id, r = state.rows.find((x) => x.id === id), e = { ...current(r) };
+    e[t.dataset.field] = Math.max(0, e[t.dataset.field] + +t.dataset.step);
+    state.edits[id] = e; render();
+  }
+  else if (t.dataset.save) save(+t.dataset.save);
+  else if (t.id === "copy") {
+    navigator.clipboard.writeText(orderText()).then(() => toast("Order list copied"), () => toast("Copy failed"));
+  }
+});
+
+document.addEventListener("change", (ev) => {
+  const i = ev.target; if (i.tagName !== "INPUT" || !i.dataset.field) return;
+  const id = +i.dataset.id, r = state.rows.find((x) => x.id === id), e = { ...current(r) };
+  e[i.dataset.field] = Math.max(0, parseInt(i.value, 10) || 0);
+  state.edits[id] = e; render();
+});
+
+restoreSession();
+</script>
+</body>
+</html>
