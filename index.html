@@ -176,6 +176,10 @@
   .fly.minus, .fly.lowtag { color: var(--vermilion); border-color: var(--vermilion); }
   .fly.saved { background: var(--cobalt); color: #fff; border-color: var(--cobalt); height: 25px; padding: 0 11px; }
 
+  /* live weather backdrop */
+  #wxcanvas { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -2; pointer-events: none; }
+  .bar .l { display: flex; align-items: center; gap: 8px; }
+
   /* video: login backdrop and top band */
   .bgvid { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 68% 50%; z-index: -1; background: #d41f4a; }
   .login .logo { background: var(--sheet); border: 1px solid var(--rule); padding: 16px 28px; }
@@ -214,7 +218,7 @@
     .bar { height: 64px; padding: 0 16px; }
     .logo b { font-size: 19px; } .logo i { font-size: 7.5px; }
     .lbl { font-size: 9px; }
-    .bar .r .status, .bar .jp { display: none; }
+    .bar .r .status, .bar .jp, .wxlbl { display: none; }
     .logo b { white-space: nowrap; }
     .cap-title { font-size: 32px; }
     .wrap { padding: 0 16px 24px; }
@@ -243,7 +247,7 @@
 
 <div id="app" hidden>
   <header class="bar">
-    <div class="l"><span class="box lbl" id="who"></span></div>
+    <div class="l"><span class="box lbl" id="who"></span><span class="box lbl wxlbl" id="wx" hidden></span></div>
     <div class="logo"><b>Café Stock</b><i>Tracker</i></div>
     <div class="r">
       <span class="status" id="status"></span>
@@ -288,6 +292,7 @@
   </svg>
 </div>
 
+<canvas id="wxcanvas" aria-hidden="true"></canvas>
 <div class="grain"></div>
 <div class="cur" id="cur"><div class="ring"></div><div class="pt"></div><div class="tx" id="curtx">SAVE<br>保存</div></div>
 <div class="toast" id="toast"></div>
@@ -795,6 +800,116 @@ if (matchMedia("(pointer: fine)").matches) {
     requestAnimationFrame(tick);
   })(last);
 }
+
+// ---- live weather backdrop: real conditions for the outlets (Singapore), animated on a canvas ----
+const WX_PLACE = { name: "Singapore", lat: 1.3521, lon: 103.8198 };
+const wx = { kind: "clear", heavy: false, isDay: true, temp: null, wind: 0, label: "" };
+function wxFromCode(c) {
+  if (c === 0) return ["clear", "Clear"]; if (c === 1) return ["clear", "Mainly clear"]; if (c === 2) return ["partly", "Partly cloudy"];
+  if (c === 3) return ["cloud", "Overcast"]; if (c === 45 || c === 48) return ["fog", "Fog"];
+  if (c >= 51 && c <= 57) return ["drizzle", "Drizzle"]; if (c === 61 || c === 63) return ["rain", "Rain"];
+  if (c === 65 || c === 66 || c === 67) return ["rain", "Heavy rain"]; if (c === 80 || c === 81) return ["rain", "Showers"];
+  if (c === 82) return ["rain", "Heavy showers"]; if (c >= 95) return ["storm", "Thunderstorm"];
+  if ((c >= 71 && c <= 77) || c === 85 || c === 86) return ["snow", "Snow"]; return ["partly", "Cloudy"];
+}
+async function loadWeather() {
+  const q = new URLSearchParams(location.search), force = q.get("wx");
+  try {
+    const url = "https://api.open-meteo.com/v1/forecast?latitude=" + WX_PLACE.lat + "&longitude=" + WX_PLACE.lon +
+      "&current=temperature_2m,weather_code,is_day,wind_speed_10m&timezone=auto";
+    const res = await fetch(url); if (!res.ok) throw new Error(res.status);
+    const c = (await res.json()).current, [kind, label] = wxFromCode(c.weather_code);
+    Object.assign(wx, { kind, label, isDay: !!c.is_day, temp: Math.round(c.temperature_2m), wind: c.wind_speed_10m, heavy: /Heavy/.test(label) });
+  } catch (e) { if (!wx.label) return; }
+  if (force) { wx.kind = force; wx.label = "Preview: " + force; if (q.get("night")) wx.isDay = false; wx.heavy = q.get("heavy") === "1"; }
+  const el = $("wx");
+  el.textContent = WX_PLACE.name + (wx.temp != null ? " / " + wx.temp + "°C" : "") + " / " + wx.label;
+  el.hidden = false; seedWx(); if (reduced) drawWx(0);
+}
+
+const cv = $("wxcanvas"), g = cv.getContext("2d");
+let CW = 0, CH = 0, drops = [], puffs = [], stars = [], flash = 0, bolt = null, nextBolt = 0, tw = 0;
+function sizeWx() {
+  const dpr = Math.min(2, devicePixelRatio || 1); CW = innerWidth; CH = innerHeight;
+  cv.width = CW * dpr; cv.height = CH * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0); seedWx(); if (reduced) drawWx(0);
+}
+function seedWx() {
+  const k = wx.kind, scale = Math.max(0.5, CW / 1200), f = wx.heavy ? 1.6 : 1;
+  const n = k === "storm" ? 280 : k === "rain" ? 170 * f : k === "drizzle" ? 90 : k === "snow" ? 120 : 0;
+  drops = Array.from({ length: Math.round(n * scale) }, () => ({ x: Math.random() * CW, y: Math.random() * CH, z: 0.5 + Math.random(), s: Math.random() * 6.28 }));
+  const pc = { partly: 5, cloud: 9, rain: 9, storm: 11, drizzle: 8, fog: 7, snow: 8, clear: wx.isDay ? 2 : 0 }[k] ?? 4;
+  puffs = Array.from({ length: pc }, (_, i) => ({ x: Math.random() * (CW + 400) - 200, y: 40 + Math.random() * CH * (k === "fog" ? 0.9 : 0.45), r: 70 + Math.random() * 90, v: 8 + Math.random() * 14, a: 0.5 + Math.random() * 0.5 }));
+  stars = Array.from({ length: wx.isDay ? 0 : 90 }, () => ({ x: Math.random() * CW, y: Math.random() * CH * 0.8, r: Math.random() * 1.6 + 0.4, p: Math.random() * 6.28 }));
+}
+function makeBolt() {
+  const pts = []; let x = CW * (0.15 + Math.random() * 0.7), y = 0;
+  while (y < CH * (0.45 + Math.random() * 0.25)) { pts.push([x, y]); x += (Math.random() - 0.5) * 70; y += 25 + Math.random() * 35; }
+  bolt = pts; flash = 1;
+}
+function drawWx(dt) {
+  tw += dt; const k = wx.kind, dark = k === "storm" || k === "rain" || k === "cloud" || k === "drizzle";
+  g.clearRect(0, 0, CW, CH);
+  // base tint over the paper
+  const tint = !wx.isDay ? "rgba(40,55,110,.12)" : k === "storm" ? "rgba(45,55,85,.20)" : dark ? "rgba(90,105,140,.13)" : k === "fog" ? "rgba(200,200,205,.35)" : k === "clear" ? "rgba(255,196,110,.12)" : "rgba(255,255,255,.05)";
+  g.fillStyle = tint; g.fillRect(0, 0, CW, CH);
+  // sun / moon / stars
+  if (k === "clear" || k === "partly") {
+    const sx = CW * 0.84, sy = Math.min(150, CH * 0.2);
+    if (wx.isDay) {
+      const gl = g.createRadialGradient(sx, sy, 6, sx, sy, 190); gl.addColorStop(0, "rgba(255,190,90,.65)"); gl.addColorStop(1, "rgba(255,190,90,0)");
+      g.fillStyle = gl; g.beginPath(); g.arc(sx, sy, 190, 0, 6.29); g.fill();
+      g.strokeStyle = "rgba(238,122,43,.28)"; g.lineWidth = 2;
+      for (let i = 0; i < 18; i++) { const a = i / 18 * 6.283 + tw * 0.06, r1 = 62, r2 = 98 + 22 * Math.sin(tw * 1.4 + i * 1.7);
+        g.beginPath(); g.moveTo(sx + Math.cos(a) * r1, sy + Math.sin(a) * r1); g.lineTo(sx + Math.cos(a) * r2, sy + Math.sin(a) * r2); g.stroke(); }
+      g.fillStyle = "rgba(244,150,60,.9)"; g.beginPath(); g.arc(sx, sy, 46, 0, 6.29); g.fill();
+    } else {
+      const gl = g.createRadialGradient(sx, sy, 4, sx, sy, 130); gl.addColorStop(0, "rgba(250,244,215,.8)"); gl.addColorStop(1, "rgba(250,244,215,0)");
+      g.fillStyle = gl; g.beginPath(); g.arc(sx, sy, 130, 0, 6.29); g.fill();
+      g.fillStyle = "rgba(246,240,214,.95)"; g.beginPath(); g.arc(sx, sy, 34, 0, 6.29); g.fill();
+      g.fillStyle = "rgba(40,55,110,.18)"; g.beginPath(); g.arc(sx + 12, sy - 6, 30, 0, 6.29); g.fill();
+    }
+  }
+  for (const s of stars) { g.fillStyle = "rgba(25,30,70," + (0.35 + 0.4 * Math.sin(tw * 2 + s.p)) + ")"; g.beginPath(); g.arc(s.x, s.y, s.r, 0, 6.29); g.fill(); }
+  // clouds and fog
+  for (const p of puffs) {
+    p.x += p.v * dt * (k === "storm" ? 2.2 : 1); if (p.x > CW + 220) p.x = -260;
+    const alpha = (k === "fog" ? 0.2 : dark ? 0.2 + 0.1 * p.a : 0.55 * p.a), col = dark ? "95,108,135" : k === "fog" ? "230,230,235" : "255,255,255";
+    if (k === "fog") { const gr = g.createLinearGradient(0, p.y - 60, 0, p.y + 60); gr.addColorStop(0, "rgba(" + col + ",0)"); gr.addColorStop(.5, "rgba(" + col + "," + alpha * 2 + ")"); gr.addColorStop(1, "rgba(" + col + ",0)"); g.fillStyle = gr; g.fillRect(p.x - 420, p.y - 60, 840, 120); continue; }
+    for (let j = 0; j < 5; j++) {
+      const cx = p.x + (j - 2) * p.r * 0.55, cy = p.y + Math.sin(j * 1.9) * p.r * 0.18, r = p.r * (0.55 + 0.25 * Math.sin(j * 2.3 + 1));
+      const gr = g.createRadialGradient(cx, cy, 2, cx, cy, r); gr.addColorStop(0, "rgba(" + col + "," + alpha + ")"); gr.addColorStop(1, "rgba(" + col + ",0)");
+      g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, r, 0, 6.29); g.fill();
+    }
+  }
+  // rain, drizzle, snow
+  const slant = Math.min(60, wx.wind * 2.2) + (k === "storm" ? 40 : 10);
+  if (k === "snow") {
+    g.fillStyle = "rgba(255,255,255,.95)";
+    for (const d of drops) { d.y += (28 + 22 * d.z) * dt; d.x += Math.sin(tw + d.s) * 14 * dt; if (d.y > CH) { d.y = -6; d.x = Math.random() * CW; }
+      g.beginPath(); g.arc(d.x, d.y, 1.6 * d.z + 0.8, 0, 6.29); g.fill(); }
+  } else if (drops.length) {
+    g.strokeStyle = k === "storm" ? "rgba(31,50,120,.5)" : "rgba(31,63,176,.38)"; g.lineWidth = k === "drizzle" ? 1 : 1.4; g.lineCap = "round";
+    const sp = k === "drizzle" ? 380 : k === "storm" ? 980 : 760, ln = k === "drizzle" ? 9 : 20;
+    g.beginPath();
+    for (const d of drops) { const v = sp * d.z; d.y += v * dt; d.x += slant * d.z * dt * 3;
+      if (d.y > CH) { d.y = -30; d.x = Math.random() * CW; } if (d.x > CW + 40) d.x = -40;
+      g.moveTo(d.x, d.y); g.lineTo(d.x - slant * 0.05 * d.z * ln / 10, d.y - ln * d.z); }
+    g.stroke();
+  }
+  // lightning
+  if (k === "storm") {
+    if ((nextBolt -= dt) <= 0) { makeBolt(); nextBolt = 3 + Math.random() * 5; }
+    if (flash > 0) {
+      if (bolt) { g.strokeStyle = "rgba(255,255,255," + flash + ")"; g.lineWidth = 5; g.shadowColor = "rgba(31,63,176,.9)"; g.shadowBlur = 18;
+        g.beginPath(); bolt.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.stroke(); g.shadowBlur = 0; }
+      g.fillStyle = "rgba(255,255,255," + flash * 0.4 + ")"; g.fillRect(0, 0, CW, CH); flash = Math.max(0, flash - dt * 2.6);
+    }
+  }
+}
+let wxLast = performance.now();
+(function wxLoop(t) { const dt = Math.min(0.05, (t - wxLast) / 1000); wxLast = t; drawWx(reduced ? 0 : dt); if (!reduced) requestAnimationFrame(wxLoop); })(wxLast);
+addEventListener("resize", sizeWx);
+sizeWx(); loadWeather(); setInterval(loadWeather, 600000);
 
 $("loginVid").src = VIDEO; $("bandVid").src = VIDEO;
 restoreSession();
