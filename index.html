@@ -176,6 +176,29 @@
   .fly.minus, .fly.lowtag { color: var(--vermilion); border-color: var(--vermilion); }
   .fly.saved { background: var(--cobalt); color: #fff; border-color: var(--cobalt); height: 25px; padding: 0 11px; }
 
+  /* item detail sheet */
+  .card { cursor: pointer; }
+  .detail { position: fixed; inset: 0; z-index: 60; background: var(--sheet); visibility: hidden; display: grid; grid-template-columns: 1fr 1fr; gap: 4vw; padding: 110px 6vw 56px 7vw; overflow: hidden; }
+  .detail.show { visibility: visible; }
+  .dclose { position: absolute; left: 32px; top: 31px; }
+  .dlogo { position: absolute; left: 0; right: 0; top: 0; height: 84px; display: flex; align-items: center; justify-content: center; }
+  .dleft { align-self: center; justify-self: end; width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 18px; }
+  .dtitle { font-family: var(--serif); font-size: clamp(44px, 5.4vw, 84px); line-height: 1; letter-spacing: -.025em; }
+  .drow { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 10px 0; border-bottom: 1px solid rgba(20,20,20,.25); font-size: 19px; }
+  .mask > .drow { display: flex; }
+  .drow b { font-weight: 400; } .drow i { font-style: normal; color: var(--muted); font-size: 16px; }
+  .drow em { font-style: normal; } .drow .lowtxt { color: var(--vermilion); } .drow .oktxt { color: var(--green); }
+  .dcredit { font-style: italic; font-size: 17px; color: var(--muted); max-width: 44ch; }
+  .dbtn { height: 44px; padding: 0 20px; border: 1px solid var(--cobalt); color: var(--cobalt); margin-top: 10px; transition: background .4s var(--ease), color .4s var(--ease); }
+  .dbtn:hover { background: var(--cobalt); color: #fff; }
+  .dposter { height: min(100%, 78vh); width: auto; aspect-ratio: 474 / 900; align-self: center; justify-self: start; display: block; }
+  @media (max-width: 767px) {
+    .detail { grid-template-columns: 1fr; overflow-y: auto; padding: 84px 22px 40px; gap: 24px; align-content: start; }
+    .dlogo { height: 64px; } .dclose { left: 16px; top: 21px; }
+    .dposter { order: -1; height: 46svh; justify-self: center; }
+    .dleft { justify-self: stretch; } .dtitle { font-size: 42px; }
+  }
+
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 140%); z-index: 50; background: var(--ink); color: var(--paper);
     padding: 12px 20px; font-family: var(--sans); font-weight: 600; font-size: 11px; letter-spacing: .09em; text-transform: uppercase; transition: transform .5s var(--ease); }
   .toast.show { transform: translate(-50%, 0); }
@@ -235,8 +258,29 @@
   <footer><span class="lbl">© Café Stock Tracker</span><span class="lbl">Supabase / Vercel</span></footer>
 </div>
 
+<div class="detail" id="detail" role="dialog" aria-modal="true" aria-label="Item detail">
+  <button class="dclose box lbl btnbox" id="dclose">Close / 閉じる</button>
+  <div class="dlogo"><div class="logo"><b>Café Stock</b><i>Tracker</i></div></div>
+  <div class="dleft" id="dleft"></div>
+  <svg class="dposter" id="poster" viewBox="0 0 474 900" aria-hidden="true">
+    <defs>
+      <filter id="ink" filterUnits="userSpaceOnUse" x="-200" y="-200" width="874" height="1300">
+        <feTurbulence type="fractalNoise" baseFrequency=".011" numOctaves="3" seed="7" result="n"/>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="120" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <mask id="inkmask" maskUnits="userSpaceOnUse" x="-200" y="-200" width="874" height="1300">
+        <g filter="url(#ink)" fill="#fff" id="inkblobs">
+          <circle cx="150" cy="330" r="0"/><circle cx="340" cy="600" r="0"/><circle cx="250" cy="120" r="0"/>
+          <circle cx="90" cy="760" r="0"/><circle cx="400" cy="250" r="0"/><circle cx="260" cy="860" r="0"/><circle cx="230" cy="470" r="0"/>
+        </g>
+      </mask>
+    </defs>
+    <g mask="url(#inkmask)" id="posterArt"></g>
+  </svg>
+</div>
+
 <div class="grain"></div>
-<div class="cur" id="cur"><div class="ring"></div><div class="pt"></div><div class="tx">SAVE<br>保存</div></div>
+<div class="cur" id="cur"><div class="ring"></div><div class="pt"></div><div class="tx" id="curtx">SAVE<br>保存</div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -605,7 +649,111 @@ document.addEventListener("change", (ev) => {
   state.edits[id] = e; render();
 });
 
-// custom ring cursor: shrinks over buttons, becomes a cobalt SAVE disc over an active save button
+// ---- item detail sheet: grows out of the card, text rises in masks, poster bleeds in as ink ----
+const EASE_SHEET = "cubic-bezier(.76,0,.18,1)", EASE_TEXT = "cubic-bezier(.2,.8,.2,1)", TILT = "rotate(-4.5deg)";
+const INK = [[0, 0], [1, 120], [2, 220], [3, 300], [4, 360], [5, 420], [6, 180]]; // [circle index, delay ms]
+const PAL = [["#EDE3CF", "#1F3FB0", "#D8432B"], ["#141414", "#D8432B", "#EDE3CF"], ["#1F3FB0", "#EDE3CF", "#D8432B"],
+             ["#D8432B", "#141414", "#EDE3CF"], ["#EDE3CF", "#141414", "#1F3FB0"]];
+const lum = (h) => { const n = parseInt(h.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255; };
+const onC = (h) => (lum(h) > 0.55 ? "#141414" : "#F4F2ED");
+let inkRaf = 0, closing = false;
+
+function nameLines(name) {
+  const words = name.split(" "), lines = []; let cur = "";
+  for (const w of words) { if ((cur + " " + w).trim().length > 13 && cur) { lines.push(cur); cur = w; } else cur = (cur + " " + w).trim(); }
+  if (cur) lines.push(cur); return lines;
+}
+
+function posterArt(r, total) {
+  const cats = [...new Set(state.rows.map((x) => x.category))];
+  const [bg, a, b] = PAL[Math.max(0, cats.indexOf(r.category)) % PAL.length];
+  const lines = nameLines(r.name), fs = lines.length > 3 ? 40 : 50;
+  const name = lines.map((l, i) => `<text x="34" y="${700 + i * (fs + 6)}" font-family="Newsreader,Georgia,serif" font-size="${fs}" fill="${onC(b)}">${esc(l)}</text>`).join("");
+  return `<rect width="474" height="900" fill="${bg}"/>
+    <circle cx="237" cy="330" r="196" fill="${a}"/>
+    <circle cx="400" cy="120" r="34" fill="${b}"/><circle cx="70" cy="560" r="22" fill="${b}"/>
+    <text x="34" y="52" font-family="Inter Tight,sans-serif" font-weight="600" font-size="13" letter-spacing="2.2" fill="${onC(bg)}">A CAFÉ STOCK ITEM</text>
+    <text x="237" y="${total > 99 ? 420 : 440}" text-anchor="middle" font-family="Newsreader,Georgia,serif" font-size="${total > 99 ? 230 : 300}" fill="${onC(a)}">${total}</text>
+    <text x="237" y="500" text-anchor="middle" font-family="Inter Tight,sans-serif" font-weight="600" font-size="13" letter-spacing="3" fill="${onC(a)}">${esc(r.unit.toUpperCase())}S IN STOCK</text>
+    <rect y="620" width="474" height="280" fill="${b}"/>
+    ${name}
+    <rect x="346" y="838" width="96" height="30" fill="none" stroke="${onC(b)}" stroke-width="1.5"/>
+    <text x="394" y="858" text-anchor="middle" font-family="Inter Tight,sans-serif" font-weight="600" font-size="13" letter-spacing="2.4" fill="${onC(b)}">${esc(r.sku.replace("SKU-", "NO. "))}</text>`;
+}
+
+function openDetail(id, cardEl) {
+  const r = state.rows.find((x) => x.id === id); if (!r || closing) return;
+  const all = state.rows.filter((x) => x.sku === r.sku).sort((a, b) => a.outlet.localeCompare(b.outlet));
+  const total = all.reduce((s, x) => s + x.qty, 0);
+  const short = all.filter(isLow).reduce((s, x) => s + Math.max(x.reorder - x.qty, 1), 0);
+  state.detailId = id;
+  $("dleft").innerHTML = `
+    <div class="mask"><span class="lbl cobalt">${esc(r.sku)} / ${esc(r.category)}</span></div>
+    <div class="mask"><span class="dtitle" style="display:block">${esc(r.name)}</span></div>
+    <div class="mask"><span class="lbl muted">${all.length} outlets / per ${esc(r.unit)} / ${total} in stock</span></div>
+    <div>${all.map((x) => `<div class="mask"><span class="drow"><b>${esc(x.outlet)}</b><i>${x.qty} in stock / reorder at ${x.reorder}</i>
+      <em class="lbl ${isLow(x) ? "lowtxt" : "oktxt"}">${isLow(x) ? "Low / 不足" : "OK"}</em></span></div>`).join("")}</div>
+    <div class="mask"><span class="dcredit" style="display:block">${short
+      ? `Across all outlets, ${short} ${esc(r.unit)}${short === 1 ? "" : "s"} are needed to get back to reorder levels.`
+      : "Every outlet is above its reorder level."}</span></div>
+    <div class="mask"><span style="display:block"><button class="dbtn lbl" id="dgo">Go to order list / 発注</button></span></div>`;
+  $("posterArt").innerHTML = posterArt(r, total);
+  document.querySelectorAll("#inkblobs circle").forEach((c) => c.setAttribute("r", reduced ? 720 : 0));
+
+  const d = $("detail"), rect = cardEl.getBoundingClientRect(), W = innerWidth, H = innerHeight;
+  const cut = `inset(${rect.top}px ${W - rect.right}px ${H - rect.bottom}px ${rect.left}px round 3px)`;
+  d.style.transformOrigin = (rect.left + rect.width / 2) + "px " + (rect.top + rect.height / 2) + "px";
+  d.classList.add("show"); document.body.style.overflow = "hidden";
+  d.animate([{ clipPath: cut, transform: TILT }, { clipPath: "inset(0px 0px 0px 0px round 0px)", transform: "rotate(0deg)" }],
+    { duration: reduced ? 1 : 1050, easing: EASE_SHEET, fill: "both" });
+  d.querySelectorAll(".mask > span").forEach((el, i) => el.animate(
+    [{ transform: "translateY(110%)" }, { transform: "translateY(0)" }],
+    { duration: reduced ? 1 : 900, delay: reduced ? 0 : 620 + i * 75, easing: EASE_TEXT, fill: "both" }));
+  if (!reduced) {
+    const circles = [...document.querySelectorAll("#inkblobs circle")], t0 = performance.now() + 520;
+    cancelAnimationFrame(inkRaf);
+    (function step(now) {
+      let done = true;
+      INK.forEach(([ci, delay]) => {
+        const p = Math.min(1, Math.max(0, (now - t0 - delay) / 1250));
+        circles[ci].setAttribute("r", 720 * (1 - Math.pow(1 - p, 3)));
+        if (p < 1) done = false;
+      });
+      if (!done) inkRaf = requestAnimationFrame(step);
+    })(performance.now());
+  }
+  const cs = $("curtx"); document.getElementById("cur").classList.remove("open");
+}
+
+function closeDetail() {
+  const d = $("detail"); if (!d.classList.contains("show") || closing) return;
+  closing = true;
+  const card = document.querySelector('#main .card[data-id="' + state.detailId + '"]');
+  const rect = card ? card.getBoundingClientRect()
+    : { top: innerHeight / 2 - 60, bottom: innerHeight / 2 + 60, left: innerWidth / 2 - 120, right: innerWidth / 2 + 120, width: 240, height: 120 };
+  const W = innerWidth, H = innerHeight;
+  const cut = `inset(${rect.top}px ${W - rect.right}px ${H - rect.bottom}px ${rect.left}px round 3px)`;
+  d.style.transformOrigin = (rect.left + rect.width / 2) + "px " + (rect.top + rect.height / 2) + "px";
+  d.getAnimations().forEach((a) => a.cancel());
+  const a = d.animate([{ clipPath: "inset(0px 0px 0px 0px round 0px)", transform: "rotate(0deg)" }, { clipPath: cut, transform: TILT }],
+    { duration: reduced ? 1 : 850, easing: EASE_SHEET, fill: "both" });
+  a.onfinish = () => {
+    d.getAnimations().forEach((x) => x.cancel());
+    d.classList.remove("show"); document.body.style.overflow = ""; cancelAnimationFrame(inkRaf); closing = false;
+  };
+}
+
+$("main").addEventListener("click", (ev) => {
+  if (ev.target.closest("button, input, a")) return;
+  const card = ev.target.closest(".card"); if (card) openDetail(+card.dataset.id, card);
+});
+$("dclose").addEventListener("click", closeDetail);
+$("detail").addEventListener("click", (ev) => {
+  if (ev.target.id === "dgo") { closeDetail(); setTimeout(() => { state.tab = ORDER_TAB; state.reveal = true; render(); }, reduced ? 0 : 900); }
+});
+addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeDetail(); });
+
+// custom ring cursor: shrinks over buttons, becomes a cobalt SAVE / OPEN disc over a save button or a card
 if (matchMedia("(pointer: fine)").matches) {
   document.documentElement.classList.add("fine");
   const cur = $("cur");
@@ -614,7 +762,9 @@ if (matchMedia("(pointer: fine)").matches) {
     mx = e.clientX; my = e.clientY; cur.classList.add("on");
     const sv = e.target.closest && e.target.closest(".save:not(:disabled)");
     const b = e.target.closest && e.target.closest("button, a");
-    cur.classList.toggle("open", !!sv);
+    const cd = !sv && !b && e.target.closest && !e.target.closest("input") && e.target.closest("#main .card");
+    $("curtx").innerHTML = sv ? "SAVE<br>保存" : "OPEN<br>開く";
+    cur.classList.toggle("open", !!sv || !!cd);
     cur.classList.toggle("btn", !!b && !sv);
   });
   document.addEventListener("pointerleave", () => cur.classList.remove("on"));
