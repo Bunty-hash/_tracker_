@@ -34,7 +34,8 @@
   h1 span { color: var(--accent); }
   .sub { color: var(--muted); font-size: 16px; margin-top: 4px; }
   .status { font-size: 15px; color: var(--muted); }
-  .status.err { color: #c0392b; }
+  .status.ok { color: #2e8b57; font-weight: 600; }
+  .status.err { color: #d93025; font-weight: 600; }
 
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin: 24px 0; }
   .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; }
@@ -250,14 +251,26 @@ async function load() {
     state.rows.sort((a, b) => a.sku.localeCompare(b.sku));
     state.outlets = [...new Set(state.rows.map((r) => r.outlet))].sort();
     if (!state.tab) state.tab = state.outlets[0];
-    $("status").textContent = "● Connected to Supabase";
-    $("status").className = "status";
+    setStatus(true);
   } catch (e) {
-    $("status").textContent = "Could not load data: " + e.message;
-    $("status").className = "status err";
+    setStatus(false, "Not connected: " + e.message.slice(0, 60));
   }
   render();
 }
+
+function setStatus(ok, msg) {
+  $("status").textContent = ok ? "● Connected to Supabase" : "● " + (msg || "Not connected to Supabase");
+  $("status").className = "status " + (ok ? "ok" : "err");
+}
+
+// re-check the connection every 30 seconds while signed in
+setInterval(async () => {
+  if (!state.session || $("app").hidden) return;
+  try {
+    const res = await fetch(SUPABASE_URL + "/rest/v1/outlets?select=id&limit=1", { headers: hdr() });
+    setStatus(res.ok, res.ok ? "" : "Not connected (" + res.status + ")");
+  } catch (e) { setStatus(false, "Not connected to Supabase"); }
+}, 30000);
 
 const isLow = (r) => r.qty <= r.reorder;
 const current = (r) => state.edits[r.id] || { qty: r.qty, reorder: r.reorder };
@@ -410,6 +423,7 @@ async function save(id) {
     toast("Saved " + row.name);
   } catch (err) {
     toast("Save failed: " + err.message.slice(0, 80));
+    if (err instanceof TypeError) setStatus(false, "Not connected to Supabase");
   }
   delete state.saving[id]; render();
 }
