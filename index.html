@@ -176,6 +176,13 @@
   .fly.minus, .fly.lowtag { color: var(--vermilion); border-color: var(--vermilion); }
   .fly.saved { background: var(--cobalt); color: #fff; border-color: var(--cobalt); height: 25px; padding: 0 11px; }
 
+  /* video: login backdrop and top band */
+  .bgvid { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 68% 50%; z-index: -1; background: #d41f4a; }
+  .login .logo { background: var(--sheet); border: 1px solid var(--rule); padding: 16px 28px; }
+  .band { position: relative; height: clamp(120px, 20vw, 210px); margin-top: 30px; border: 1px solid var(--rule); overflow: hidden; background: #d41f4a; }
+  .band video { width: 100%; height: 100%; object-fit: cover; object-position: 68% 50%; display: block; }
+  .band .box { position: absolute; left: 14px; bottom: 14px; background: var(--sheet); }
+
   /* item detail sheet */
   .card { cursor: pointer; }
   .detail { position: fixed; inset: 0; z-index: 60; background: var(--sheet); visibility: hidden; display: grid; grid-template-columns: 1fr 1fr; gap: 4vw; padding: 110px 6vw 56px 7vw; overflow: hidden; }
@@ -222,6 +229,7 @@
 </head>
 <body>
 <div class="login" id="login" hidden>
+  <video class="bgvid" id="loginVid" muted loop playsinline preload="auto" aria-hidden="true"></video>
   <div class="logo"><b>Café Stock</b><i>Tracker</i></div>
   <form class="panel" id="loginForm">
     <h2>Sign in</h2>
@@ -251,6 +259,7 @@
   <div class="tabwrap"><nav class="tabs" id="tabs" aria-label="Outlets"><i class="ind" id="ind"></i><span id="tabBtns"></span></nav></div>
 
   <div class="wrap">
+    <div class="band"><video id="bandVid" muted loop playsinline preload="metadata" aria-hidden="true"></video><span class="box lbl">Today's count / 本日</span></div>
     <section class="stats" id="stats"></section>
     <div class="chips" id="chips"></div>
     <main id="main"></main>
@@ -320,6 +329,7 @@ async function startSession(s) {
   const r = await fetch(SUPABASE_URL + "/rest/v1/profiles?select=username,display_name,role&id=eq." + s.user.id, { headers: hdr() });
   state.profile = (await r.json())[0] || { username: s.user.email, display_name: s.user.email, role: "staff" };
   $("login").hidden = true; $("app").hidden = false;
+  playVid($("loginVid"), false); playVid($("bandVid"), true);
   $("who").textContent = state.profile.display_name + (state.profile.role === "admin" ? " / Admin" : "");
   await load();
 }
@@ -339,6 +349,7 @@ async function restoreSession() {
 function showLogin() {
   state.profile = null; state.rows = []; state.edits = {};
   $("app").hidden = true; $("login").hidden = false; $("lp").value = "";
+  playVid($("bandVid"), false); playVid($("loginVid"), true);
 }
 
 $("loginForm").addEventListener("submit", async (ev) => {
@@ -650,7 +661,14 @@ document.addEventListener("change", (ev) => {
 });
 
 // ---- item detail sheet: grows out of the card, text rises in masks, poster bleeds in as ink ----
-const EASE_SHEET = "cubic-bezier(.76,0,.18,1)", EASE_TEXT = "cubic-bezier(.2,.8,.2,1)", TILT = "rotate(-4.5deg)";
+const VIDEO = "https://pub-86dc5b5484314368ac5436a674b0d919.r2.dev/cloudinarry%20to%20cloudflare/202606021731-e_hqa6sn.mp4";
+// play a muted looping clip; stay still when the visitor prefers reduced motion
+function playVid(v, on) {
+  if (!v) return;
+  if (!on || reduced) { v.pause(); return; }
+  v.muted = true; const p = v.play(); if (p && p.catch) p.catch(() => {});
+}
+const EASE_SHEET ="cubic-bezier(.76,0,.18,1)", EASE_TEXT = "cubic-bezier(.2,.8,.2,1)", TILT = "rotate(-4.5deg)";
 const INK = [[0, 0], [1, 120], [2, 220], [3, 300], [4, 360], [5, 420], [6, 180]]; // [circle index, delay ms]
 const PAL = [["#EDE3CF", "#1F3FB0", "#D8432B"], ["#141414", "#D8432B", "#EDE3CF"], ["#1F3FB0", "#EDE3CF", "#D8432B"],
              ["#D8432B", "#141414", "#EDE3CF"], ["#EDE3CF", "#141414", "#1F3FB0"]];
@@ -670,11 +688,10 @@ function posterArt(r, total) {
   const lines = nameLines(r.name), fs = lines.length > 3 ? 40 : 50;
   const name = lines.map((l, i) => `<text x="34" y="${700 + i * (fs + 6)}" font-family="Newsreader,Georgia,serif" font-size="${fs}" fill="${onC(b)}">${esc(l)}</text>`).join("");
   return `<rect width="474" height="900" fill="${bg}"/>
-    <circle cx="237" cy="330" r="196" fill="${a}"/>
-    <circle cx="400" cy="120" r="34" fill="${b}"/><circle cx="70" cy="560" r="22" fill="${b}"/>
-    <text x="34" y="52" font-family="Inter Tight,sans-serif" font-weight="600" font-size="13" letter-spacing="2.2" fill="${onC(bg)}">A CAFÉ STOCK ITEM</text>
-    <text x="237" y="${total > 99 ? 420 : 440}" text-anchor="middle" font-family="Newsreader,Georgia,serif" font-size="${total > 99 ? 230 : 300}" fill="${onC(a)}">${total}</text>
-    <text x="237" y="500" text-anchor="middle" font-family="Inter Tight,sans-serif" font-weight="600" font-size="13" letter-spacing="3" fill="${onC(a)}">${esc(r.unit.toUpperCase())}S IN STOCK</text>
+    <foreignObject x="0" y="0" width="474" height="620"><video id="posterVid" src="${VIDEO}" muted loop playsinline preload="auto" style="width:100%;height:100%;object-fit:cover;object-position:68% 50%;display:block;background:#d41f4a"></video></foreignObject>
+    <text x="34" y="52" font-family="Inter Tight,sans-serif" font-weight="600" font-size="13" letter-spacing="2.2" fill="#fff">A CAFÉ STOCK ITEM</text>
+    <text x="34" y="${total > 99 ? 556 : 566}" font-family="Newsreader,Georgia,serif" font-size="${total > 99 ? 200 : 240}" letter-spacing="-6" fill="#fff" stroke="${a}" stroke-width="1">${total}</text>
+    <text x="36" y="600" font-family="Inter Tight,sans-serif" font-weight="600" font-size="12" letter-spacing="3" fill="#fff">${esc(r.unit.toUpperCase())}S IN STOCK</text>
     <rect y="620" width="474" height="280" fill="${b}"/>
     ${name}
     <rect x="346" y="838" width="96" height="30" fill="none" stroke="${onC(b)}" stroke-width="1.5"/>
@@ -698,6 +715,7 @@ function openDetail(id, cardEl) {
       : "Every outlet is above its reorder level."}</span></div>
     <div class="mask"><span style="display:block"><button class="dbtn lbl" id="dgo">Go to order list / 発注</button></span></div>`;
   $("posterArt").innerHTML = posterArt(r, total);
+  playVid($("posterVid"), true);
   document.querySelectorAll("#inkblobs circle").forEach((c) => c.setAttribute("r", reduced ? 720 : 0));
 
   const d = $("detail"), rect = cardEl.getBoundingClientRect(), W = innerWidth, H = innerHeight;
@@ -740,6 +758,7 @@ function closeDetail() {
   a.onfinish = () => {
     d.getAnimations().forEach((x) => x.cancel());
     d.classList.remove("show"); document.body.style.overflow = ""; cancelAnimationFrame(inkRaf); closing = false;
+    playVid($("posterVid"), false);
   };
 }
 
@@ -777,6 +796,7 @@ if (matchMedia("(pointer: fine)").matches) {
   })(last);
 }
 
+$("loginVid").src = VIDEO; $("bandVid").src = VIDEO;
 restoreSession();
 </script>
 </body>
